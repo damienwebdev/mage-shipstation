@@ -1,10 +1,12 @@
 # ShipStation Magento Extension
-The ShipStation (`Auctane_Api`) module v1.3.27 ported to GitHub from Magento Connect.
+The ShipStation (`Auctane_Api`) module ported to GitHub from Magento Connect.
 
-## Installation
-This module is identical to version 1.3.27 of ShipStation as found on Magento Connect:
+# Changelog
 
-http://www.magentocommerce.com/magento-connect/shipstation.html
+1.3.28: If a configurable child selection was sent to shipstation (not the main parent), teh SHIP callback did not mark that line item / row as shipped.
+      : This has been fixed and the paent is now marked shipped allowing order to complete.
+
+From original forked repo:
 
 I have extended it only to provide a `modman` and `composer.json` file for convenient
 loading as a project dependency.
