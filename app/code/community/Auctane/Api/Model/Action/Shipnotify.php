@@ -13,71 +13,76 @@ class Auctane_Api_Model_Action_Shipnotify {
     public function process(Mage_Core_Controller_Request_Http $request) {
         // Raw XML is POSTed to this stream
         $xml = simplexml_load_file('php://input');
+        Mage::log($xml,null,'shipstation.log', true);
 
         // load some objects
         $order = $this->_getOrder($xml->OrderNumber);
-        $qtys = $this->_getOrderItemQtys(@$xml->Items, $order);
-        $shipment = $this->_getOrderShipment($order, $qtys);
+        if($this->isOrderCompletelyShipped($order) == false) {
 
-        // this is where tracking is actually added
-        $track = Mage::getModel('sales/order_shipment_track')
+            $qtys = $this->_getOrderItemQtys(@$xml->Items, $order);
+            Mage::log(print_r($qtys, true), null, 'shipstation.log', true);
+            $shipment = $this->_getOrderShipment($order, $qtys);
+
+            // this is where tracking is actually added
+            $track = Mage::getModel('sales/order_shipment_track')
                 ->setNumber($xml->TrackingNumber)
                 ->setCarrierCode($xml->Carrier)
                 ->setTitle($xml->Service);
-        $shipment->addTrack($track);
+            $shipment->addTrack($track);
 
-        // 'NotifyCustomer' must be "true" or "yes" to trigger an email
-        $notify = filter_var(@$xml->NotifyCustomer, FILTER_VALIDATE_BOOLEAN);
+            // 'NotifyCustomer' must be "true" or "yes" to trigger an email
+            $notify = filter_var(@$xml->NotifyCustomer, FILTER_VALIDATE_BOOLEAN);
 
-        $capture = filter_var($request->getParam('capture'), FILTER_VALIDATE_BOOLEAN);
-        if ($capture && $order->canInvoice()) {
-            $invoice = $order->prepareInvoice($qtys);
-            $invoice->setRequestedCaptureCase($invoice->canCapture() ? 'online' : 'offline')
+            $capture = filter_var($request->getParam('capture'), FILTER_VALIDATE_BOOLEAN);
+            if ($capture && $order->canInvoice()) {
+                $invoice = $order->prepareInvoice($qtys);
+                $invoice->setRequestedCaptureCase($invoice->canCapture() ? 'online' : 'offline')
                     ->register() // captures & updates order totals
                     ->addComment($this->_getInvoiceComment(), $notify)
                     ->sendEmail($notify); // always send to store manager, and optionally notify customer too
-            $order->setIsInProcess(true); // updates status on save
-        }
+                $order->setIsInProcess(true); // updates status on save
+            }
 
-        // Internal notes are only visible to admin
-        if (@$xml->InternalNotes) {
-            $shipment->addComment($xml->InternalNotes);
-        }
-        // Customer notes have 'Visible On Frontend' set
-        if ($notify) {
-            // if no NotesToCustomer then comment is empty string
-            $shipment->sendEmail(true, (string) @$xml->NotesToCustomer)
+            // Internal notes are only visible to admin
+            if (@$xml->InternalNotes) {
+                $shipment->addComment($xml->InternalNotes);
+            }
+            // Customer notes have 'Visible On Frontend' set
+            if ($notify) {
+                // if no NotesToCustomer then comment is empty string
+                $shipment->sendEmail(true, (string)@$xml->NotesToCustomer)
                     ->setEmailSent(true);
-        }
-        if (@$xml->NotesToCustomer) {
-            $shipment->addComment($xml->NotesToCustomer, $notify, true);
-        }
-
-        $transaction = Mage::getModel('core/resource_transaction');
-        $transaction->addObject($shipment)
-                ->addObject($track);
-        if (isset($invoice)) {
-            // order has been captured, therefore has been modified
-            $transaction->addObject($invoice)
-                    ->addObject($order);
-        }
-        $transaction->save();
-
-        if ($order->canInvoice() && !$order->canShip()) { // then silently invoice if order is shipped to move status to "Complete")
-            $invoice = $order->prepareInvoice();
-            $invoice->setRequestedCaptureCase($invoice->canCapture() ? 'online' : 'offline')
-                    ->register() // captures & updates order totals
-                    ->addComment($this->_getInvoiceComment(), false)
-                    ->sendEmail(false); // always send to store manager, and optionally notify customer too
-            $order->setIsInProcess(true); // updates status on save
+            }
+            if (@$xml->NotesToCustomer) {
+                $shipment->addComment($xml->NotesToCustomer, $notify, true);
+            }
 
             $transaction = Mage::getModel('core/resource_transaction');
+            $transaction->addObject($shipment)
+                ->addObject($track);
             if (isset($invoice)) {
                 // order has been captured, therefore has been modified
                 $transaction->addObject($invoice)
-                        ->addObject($order);
+                    ->addObject($order);
             }
             $transaction->save();
+
+            if ($order->canInvoice() && !$order->canShip()) { // then silently invoice if order is shipped to move status to "Complete")
+                $invoice = $order->prepareInvoice();
+                $invoice->setRequestedCaptureCase($invoice->canCapture() ? 'online' : 'offline')
+                    ->register() // captures & updates order totals
+                    ->addComment($this->_getInvoiceComment(), false)
+                    ->sendEmail(false); // always send to store manager, and optionally notify customer too
+                $order->setIsInProcess(true); // updates status on save
+
+                $transaction = Mage::getModel('core/resource_transaction');
+                if (isset($invoice)) {
+                    // order has been captured, therefore has been modified
+                    $transaction->addObject($invoice)
+                        ->addObject($order);
+                }
+                $transaction->save();
+            }
         }
     }
 
@@ -159,7 +164,7 @@ class Auctane_Api_Model_Action_Shipnotify {
                         $objItem->setParentItem(Mage::getModel('sales/order_item')->load($objItem->getParentItemId()));
                     }
                     if ($objItem->getParentItem()) {
-                        //check for the bundle product type	
+                        //check for the bundle product type
                         if ($objItem->getParentItem()->getProductType() === 'bundle') {
                             $qtys[$objItem->getItemId()] = $qtys[$objItem->getParentItemId()];
                         }
@@ -182,11 +187,27 @@ class Auctane_Api_Model_Action_Shipnotify {
 
         // shipment must have an ID before proceeding
         Mage::getModel('core/resource_transaction')
-                ->addObject($shipment)
-                ->addObject($order)
-                ->save();
-
+            ->addObject($shipment)
+            ->addObject($order)
+            ->save();
         return $shipment;
+    }
+
+    /**
+     * @param Mage_Sales_Model_Order $order
+     * @return boolean
+     */
+    protected function isOrderCompletelyShipped(Mage_Sales_Model_Order $order)
+    {
+        foreach ($order->getAllItems() as $item) {
+            if ($item->getParentItemId()) {
+                continue;
+            }
+            if ($item->getQtyShipped() !== $item->getQtyOrdered()) {
+                return false;
+            }
+        }
+        return true;
     }
 
 }
