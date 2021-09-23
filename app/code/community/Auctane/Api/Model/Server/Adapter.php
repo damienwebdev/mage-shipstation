@@ -73,7 +73,16 @@ class Auctane_Api_Model_Server_Adapter
 	 */
 	public function run()
 	{
-		// Basic HTTP Authentication is used here, check on every request.
+        // Shipstation started sending a token to the endpoint, which is an update to how m2 adapter works
+        // teh value of Shipstation-Access-Token is what used to be in HTTP_SS_AUTH_PW
+        $headers = getallheaders();
+        if(isset($headers['Shipstation-Access-Token'])) {
+            $_SERVER['HTTP_SS_AUTH_USER'] = 'shipstation';
+            $_SERVER['HTTP_SS_AUTH_PW'] = $headers['Shipstation-Access-Token'];
+        }
+
+
+	    // Basic HTTP Authentication is used here, check on every request.
 		// Unlike RPC services there is no session
 		/* @var $user Mage_Api_Model_User */
 		$user = Mage::getModel('api/user');
