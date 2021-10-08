@@ -145,12 +145,7 @@ class Auctane_Api_Model_Action_Shipnotify {
             @list($xmlItem) = $xmlItems->xpath(sprintf('//Item/SKU[text()="%s"]/..', addslashes($item->getSku())));
             if ($xmlItem) {
                 // store quantity by order item ID, not by SKU
-                // if this is a child item, ship the parent instead
-                if ($item->getParentItemId()) {
-                    $qtys[$item->getParentItemId()] = (float) $xmlItem->Quantity;
-                } else {
-                    $qtys[$item->getId()] = (float)$xmlItem->Quantity;
-                }
+                $qtys[$item->getId()] = (float) $xmlItem->Quantity;
             }
         }
         //Add child products into the shipments
